@@ -1,0 +1,28 @@
+
+PHONY := FORCE
+
+squote  := '
+
+escsq = $(subst $(squote),'\$(squote)',$1)
+
+make-cmd = $(call escsq,$(subst \#,\\\#,$(subst $$,$$$$,$(cmd_$(1)))))
+
+arg-check = $(strip $(filter-out $(cmd_$(1)), $(cmd_$@)) \
+                    $(filter-out $(cmd_$@),   $(cmd_$(1))))
+
+any-prereq = $(filter-out $(PHONY),$?) $(filter-out $(PHONY) $(wildcard $^),$^)
+
+always = $(if $(strip $(any-prereq)), $(cmd_$(1)))
+
+if_changed = $(if $(strip $(any-prereq) $(arg-check)), \
+	$(cmd_$(1)) && \
+	printf '%s\n\n' 'cmd_$@ := $(make-cmd)' > $@.dep \
+	)
+
+if_changed_dep = $(if $(strip $(any-prereq) $(arg-check)), \
+	$(cmd_$(1)) && \
+	printf '%s\n\n' 'cmd_$@ := $(make-cmd)' > $@.dep && \
+	cat '$(@:.o=.d)' >> $@.dep \
+	)
+
+.PHONY: $(PHONY)

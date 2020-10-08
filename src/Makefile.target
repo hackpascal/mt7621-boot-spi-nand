@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (C) 2020 Weijie Gao <hackpascal@gmail.com>
+
+include $(TOPDIR)/Makefile.build
+
+LDS := loader.lds
+
+CFLAGS := -Os -Wall -ffunction-sections -fdata-sections -nostdinc -fno-builtin -ggdb -gdwarf-4
+CPPFLAGS := -Iinclude -DBAUDRATE=$(BAUDRATE) -DSTAGE=$(STAGE:stage%=%)
+CPPLDSFLAGS := -Umips -DSTAGE$(STAGE:stage%=%) -DPAGESIZE=$(PAGESIZE)
+AFLAGS := -D__ASSEMBLY__
+LDFLAGS := -Wl,--gc-sections -Wl,-Map,$(OUTDIR)/$(STAGE).map -nostdlib
+OBJFLAGS := -O binary --gap-fill=0xff
+
+include $(STAGE)/stage.mk
+include $(TARGET)/target.mk
+include libc/libc.mk
+include common/common.mk
+
+CC := $(CROSS_COMPILE)gcc
+OBJCOPY := $(CROSS_COMPILE)objcopy
+
+COBJS_OUT := $(addprefix $(OUTDIR)/,$(COBJS))
+SOBJS_OUT := $(addprefix $(OUTDIR)/,$(SOBJS))
+HEAD_OUT := $(addprefix $(OUTDIR)/,$(HEAD))
+LDS_OUT := $(addprefix $(OUTDIR)/,$(LDS))
+ELF_OUT := $(OUTDIR)/$(STAGE).elf
+BIN_OUT += $(OUTDIR)/$(STAGE).bin
+
+LDFLAGS += -Wl,-T,$(LDS_OUT)
+
+DEPS := $(addsuffix .dep,$(COBJS_OUT) $(SOBJS_OUT) $(HEAD_OUT) $(ELF_OUT) $(BIN_OUT))
+
+.SECONDEXPANSION:
+
+all: $(OUTDIR)/$(STAGE).bin
+
+$(OUTDIR)/$(STAGE).bin: $(ELF_OUT)
+	$(OBJCOPY) $(OBJFLAGS) $^ $@
+
+cmd_link = $(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(HEAD_OUT) -Wl,--start-group $(SOBJS_OUT) $(COBJS_OUT) -Wl,--end-group
+
+$(ELF_OUT): $(HEAD_OUT) $(SOBJS_OUT) $(COBJS_OUT) $(LDS_OUT) FORCE
+	$(call if_changed,link)
+
+cmd_lds = $(CC) $(CPPLDSFLAGS) -MD -E -P -C -o $@ $<
+
+$(LDS_OUT): $(LDS).S FORCE
+	$(call if_changed,lds)
+
+cmd_compile = $(CC) $(CFLAGS) $(CPPFLAGS) -MD -c -o $@ $<
+
+$(COBJS_OUT): $(OUTDIR)/%.o: $(SRCDIR)/%.c FORCE | $$(@D)/
+	$(call if_changed_dep,compile)
+
+cmd_asm = $(CC) $(CFLAGS) $(CPPFLAGS) $(AFLAGS) -MD -c -o $@ $<
+
+$(HEAD_OUT) $(SOBJS_OUT): $(OUTDIR)/%.o: $(SRCDIR)/%.S FORCE | $$(@D)/
+	$(call if_changed_dep,asm)
+
+.PRECIOUS: $(OUTDIR)/ $(OUTDIR)%/
+
+$(OUTDIR)/:
+	mkdir -p $@
+
+$(OUTDIR)%/:
+	mkdir -p $@
+
+clean:
+	rm -f $(ELF_OUT) $(SOBJS_OUT) $(COBJS_OUT) $(HEAD_OUT) $(DEPS) $(OUTDIR)/$(STAGE).bin $(OUTDIR)/$(STAGE).map
+
+.PHONY: clean
+
+-include $(STAGE)/stage-post.mk
+-include $(TARGET)/target-post.mk
+
+-include $(DEPS)

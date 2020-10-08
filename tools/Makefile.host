@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (C) 2020 Weijie Gao <hackpascal@gmail.com>
+
+include $(TOPDIR)/Makefile.build
+
+HOSTOS := $(shell uname -s | tr '[:upper:]' '[:lower:]' | \
+	    sed -e 's/\(cygwin\).*/cygwin/' \
+	        -e 's/\(msys\).*/cygwin/' \
+	        -e 's/\(mingw\).*/mingw/')
+
+ifneq ($(filter cygwin mingw,$(HOSTOS)),)
+EXE := .exe
+endif
+
+HOST_CFLAGS := -O2 -Wall -ffunction-sections -fdata-sections -ggdb -gdwarf-4 -flto
+HOST_LDFLAGS := -Wl,--gc-sections
+
+HOSTCC ?= gcc
+HOSTSTRIP ?= strip
+
+OBJS_OUT := $(addprefix $(OUTDIR)/,$(OBJS))
+
+DEPS := $(addsuffix .dep,$(OBJS_OUT))
+
+.SECONDEXPANSION:
+
+all: $(OUTDIR)/$(PROG)$(EXE)
+
+cmd_link = $(HOSTCC) $(HOST_CFLAGS) $(HOST_LDFLAGS) -o $@ -Wl,--start-group $(OBJS_OUT) -Wl,--end-group
+
+$(OUTDIR)/$(PROG)$(EXE): $(OBJS_OUT)
+	$(call if_changed,link)
+ifneq ($(INSTALLDIR),)
+	$(HOSTSTRIP) -o $(INSTALLDIR)/$(@F) $@
+endif
+
+cmd_compile = $(HOSTCC) $(HOST_CFLAGS) $(HOST_CPPFLAGS) -MD -c -o $@ $<
+
+$(OBJS_OUT): $(OUTDIR)/%.o: $(SRCDIR)/%.c | $$(@D)/
+	$(call if_changed_dep,compile)
+
+.PRECIOUS: $(OUTDIR)/ $(OUTDIR)%/
+
+$(OUTDIR)/:
+	mkdir -p $@
+
+$(OUTDIR)%/:
+	mkdir -p $@
+
+clean:
+	rm -f $(OUTDIR)/$(PROG) $(OBJS_OUT) $(DEPS)
+
+.PHONY: clean
+
+-include $(DEPS)
